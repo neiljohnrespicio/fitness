@@ -1,0 +1,1469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weekly Workout Tracker</title>
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            slate: {
+              750: '#1e293b',
+              850: '#0f172a'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif']
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- SheetJS (xlsx) CDN for Excel Save & Load -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+
+  <style>
+    /* Hide scrollbars on horizontal day tabs while keeping scroll usable */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    /* Pulse glow effect for active rest timer */
+    @keyframes pulse-glow {
+      0%, 100% { filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.4)); }
+      50% { filter: drop-shadow(0 0 16px rgba(16, 185, 129, 0.7)); }
+    }
+    .animate-pulse-glow {
+      animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    /* Celebratory glow for 100% completed day header */
+    @keyframes complete-bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-2px); }
+    }
+    .animate-complete-badge {
+      animation: complete-bounce 2s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 min-h-screen flex flex-col antialiased transition-colors duration-200">
+
+  <!-- Toast / Status Message Box -->
+  <div id="status-banner" class="hidden fixed top-4 right-4 z-50 max-w-sm px-4 py-3 rounded-xl text-sm font-semibold shadow-lg border transition-all duration-300"></div>
+
+  <!-- Top Header with Excel Save & Load & Dark Mode Toggle -->
+  <header class="sticky top-0 z-30 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-xs transition-colors duration-200">
+    <div class="max-w-6xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center text-white font-black text-sm shadow-sm">
+          W
+        </div>
+        <h1 class="text-base sm:text-xl font-extrabold tracking-tight text-slate-900 dark:text-white truncate">
+          Weekly Workout Tracker
+        </h1>
+      </div>
+
+      <!-- Controls: Theme Toggle + Excel Export & Import -->
+      <div class="flex items-center gap-2 shrink-0">
+        <!-- Dark Mode Sun/Moon Toggle Button -->
+        <button
+          type="button"
+          id="theme-toggle-btn"
+          onclick="toggleDarkMode()"
+          aria-label="Toggle dark mode"
+          class="p-2 rounded-xl text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 transition active:scale-95 cursor-pointer"
+        >
+          <!-- Sun Icon (visible in Dark mode) -->
+          <svg id="theme-icon-sun" class="w-5 h-5 hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m0 13.5V21m8.966-8.966h-2.25M4.284 12h-2.25m15.364-6.364l-1.591 1.591M6.758 17.242l-1.591 1.591m12.728 0l-1.591-1.591M6.758 6.758L5.167 5.167M12 7.5a4.5 4.5 0 100 9 4.5 4.5 0 000-9z" />
+          </svg>
+          <!-- Moon Icon (visible in Light mode) -->
+          <svg id="theme-icon-moon" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+          </svg>
+        </button>
+
+        <button
+          type="button"
+          onclick="saveToExcel()"
+          class="inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white shadow-xs transition cursor-pointer"
+        >
+          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+          </svg>
+          <span class="hidden sm:inline">Save Excel</span>
+          <span class="sm:hidden">Save</span>
+        </button>
+
+        <label
+          class="inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 transition cursor-pointer"
+        >
+          <svg class="w-4 h-4 shrink-0 text-slate-700 dark:text-slate-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+          </svg>
+          <span class="hidden sm:inline">Load Excel</span>
+          <span class="sm:hidden">Load</span>
+          <input
+            type="file"
+            id="excel-file-input"
+            accept=".xlsx,.xls,.csv"
+            onchange="loadFromExcel(event)"
+            class="hidden"
+          />
+        </label>
+      </div>
+    </div>
+
+    <!-- Monday to Sunday Tabs with Progress Indicators -->
+    <div class="border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 transition-colors duration-200">
+      <div class="max-w-6xl mx-auto px-2 sm:px-6">
+        <nav id="day-tabs" aria-label="Days of the week" class="flex items-center justify-between sm:justify-start gap-1.5 py-2.5 overflow-x-auto no-scrollbar">
+          <!-- Rendered by JavaScript -->
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Area -->
+  <main class="flex-1 max-w-4xl w-full mx-auto px-3 sm:px-6 py-6 pb-32">
+    <div class="space-y-6">
+
+      <!-- Selected Day Exercises & 3-Level Sub-Categories -->
+      <section class="space-y-4">
+        
+        <!-- Day Card Header with Prominent Daily Progress Bar -->
+        <div id="day-header-card" class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 sm:p-6 shadow-xs transition-all">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div class="flex items-center gap-2.5">
+                <h2 id="selected-day-heading" class="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white">Monday</h2>
+                <span id="day-badge-percent" class="px-2.5 py-0.5 rounded-full text-xs font-black bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">
+                  0%
+                </span>
+              </div>
+              <p id="selected-day-summary" class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium">0 exercises • 0 of 0 sets completed</p>
+            </div>
+            <button
+              type="button"
+              onclick="openAddExerciseModal()"
+              class="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white shadow-xs transition cursor-pointer shrink-0"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+              <span>Add Exercise</span>
+            </button>
+          </div>
+
+          <!-- Full Width Daily Completion Progress Track -->
+          <div class="mt-4 pt-3.5 border-t border-slate-100 dark:border-slate-700/60">
+            <div class="flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">
+              <span>Day Progress</span>
+              <span id="day-progress-text">0 / 0 Sets Completed</span>
+            </div>
+            <div class="h-3 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden p-0.5 border border-slate-200/70 dark:border-slate-600">
+              <div
+                id="day-progress-fill"
+                class="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-500 ease-out"
+                style="width: 0%"
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hierarchical Exercises List -->
+        <div id="exercises-container" class="space-y-4">
+          <!-- Rendered by JavaScript -->
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- FLOATING REST TIMER WIDGET (Collapsible & Floating) -->
+  <div id="floating-timer-wrapper" class="z-40">
+    <!-- Collapsed Floating Pill / Trigger Button -->
+    <button
+      type="button"
+      id="floating-timer-pill"
+      onclick="toggleTimerVisibility()"
+      aria-label="Expand Rest Timer"
+      class="fixed bottom-5 right-5 z-40 flex items-center gap-3 px-4 py-3 bg-slate-900 dark:bg-slate-800 text-white rounded-full shadow-2xl border border-slate-700 dark:border-slate-600 hover:scale-105 active:scale-95 transition-all duration-300 cursor-pointer group"
+    >
+      <div class="relative w-7 h-7 flex items-center justify-center shrink-0">
+        <svg class="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+          <circle cx="18" cy="18" r="15" class="stroke-slate-700 dark:stroke-slate-700" stroke-width="3.5" fill="none" />
+          <circle id="pill-mini-ring" cx="18" cy="18" r="15" class="stroke-emerald-500 transition-all duration-300" stroke-width="3.5" fill="none" stroke-dasharray="94.2" stroke-dashoffset="0" />
+        </svg>
+      </div>
+      <div class="flex flex-col text-left">
+        <div class="text-[10px] font-black uppercase tracking-wider text-slate-400 leading-none">Rest Timer</div>
+        <div id="pill-timer-display" class="text-sm font-black tabular-nums text-white leading-tight mt-0.5">01:30</div>
+      </div>
+      <span id="pill-state-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 ml-1"></span>
+      <svg class="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
+      </svg>
+    </button>
+
+    <!-- Expanded Floating Card Widget -->
+    <aside
+      id="floating-timer-card"
+      class="hidden fixed bottom-5 right-5 z-40 w-80 sm:w-88 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-3xl p-5 shadow-2xl transition-all duration-300"
+    >
+      <!-- Widget Top Bar -->
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-2">
+          <div class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
+          <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Rest Timer</h3>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <span id="timer-state-label" class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 transition-all">
+            Ready
+          </span>
+          <button
+            type="button"
+            onclick="toggleTimerVisibility()"
+            title="Minimize Timer"
+            class="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Circular SVG Progress Ring Display -->
+      <div class="flex flex-col items-center justify-center py-2">
+        <div class="relative w-40 h-40 flex items-center justify-center">
+          <!-- SVG Progress Circle -->
+          <svg class="w-full h-full transform -rotate-90 drop-shadow-xs" viewBox="0 0 160 160">
+            <circle
+              cx="80"
+              cy="80"
+              r="68"
+              class="stroke-slate-100 dark:stroke-slate-700"
+              stroke-width="10"
+              fill="none"
+            />
+            <circle
+              id="timer-progress-ring"
+              cx="80"
+              cy="80"
+              r="68"
+              class="stroke-emerald-500 transition-all duration-500 ease-linear"
+              stroke-width="10"
+              stroke-linecap="round"
+              fill="none"
+              stroke-dasharray="427.25"
+              stroke-dashoffset="0"
+            />
+          </svg>
+
+          <!-- Center Content: Countdown + Target Subtitle -->
+          <div class="absolute inset-0 flex flex-col items-center justify-center text-center px-2">
+            <div id="timer-display" class="text-3xl font-black tabular-nums tracking-tight text-slate-900 dark:text-white leading-none">
+              01:30
+            </div>
+            <div id="timer-target-subtitle" class="text-[10px] font-bold text-slate-400 dark:text-slate-400 mt-1.5 uppercase tracking-wider">
+              Target 01:30
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Time Adjusters (-15s / +15s) -->
+        <div class="flex items-center justify-center gap-3 mt-2">
+          <button
+            type="button"
+            onclick="adjustRestRemaining(-15)"
+            title="Subtract 15 seconds"
+            class="px-2.5 py-1 rounded-xl text-xs font-extrabold bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 active:scale-95 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 transition cursor-pointer"
+          >
+            -15s
+          </button>
+          <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Quick Adjust</span>
+          <button
+            type="button"
+            onclick="adjustRestRemaining(15)"
+            title="Add 15 seconds"
+            class="px-2.5 py-1 rounded-xl text-xs font-extrabold bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 active:scale-95 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 transition cursor-pointer"
+          >
+            +15s
+          </button>
+        </div>
+      </div>
+
+      <!-- Duration Presets & Custom Input -->
+      <div class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700/60 space-y-2.5">
+        <div id="preset-buttons-grid" class="grid grid-cols-4 gap-1.5">
+          <button type="button" onclick="setRestDuration(30)" data-duration="30" class="preset-btn py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">30s</button>
+          <button type="button" onclick="setRestDuration(60)" data-duration="60" class="preset-btn py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">60s</button>
+          <button type="button" onclick="setRestDuration(90)" data-duration="90" class="preset-btn py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">90s</button>
+          <button type="button" onclick="setRestDuration(120)" data-duration="120" class="preset-btn py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">2m</button>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <label for="custom-rest-input" class="text-xs font-bold text-slate-600 dark:text-slate-400 shrink-0">Sec:</label>
+          <input
+            type="number"
+            id="custom-rest-input"
+            min="5"
+            max="3600"
+            value="90"
+            onchange="setRestDuration(this.value)"
+            class="w-full rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 px-3 py-1 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+        </div>
+      </div>
+
+      <!-- Controls: Start/Pause/Reset -->
+      <div class="mt-4 flex items-center gap-2">
+        <button
+          type="button"
+          id="timer-start-pause-btn"
+          onclick="toggleRestTimer()"
+          class="flex-1 inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white shadow-xs transition cursor-pointer"
+        >
+          <svg id="timer-btn-icon-play" class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+          <svg id="timer-btn-icon-pause" class="w-4 h-4 fill-current hidden" viewBox="0 0 24 24">
+            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+          </svg>
+          <span id="timer-btn-text">Start</span>
+        </button>
+        <button
+          type="button"
+          onclick="resetRestTimer()"
+          class="py-2.5 px-4 rounded-xl text-sm font-bold bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 active:scale-95 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 transition cursor-pointer"
+        >
+          Reset
+        </button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Add / Edit Exercise Modal -->
+  <div id="exercise-modal" class="hidden fixed inset-0 z-50 overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="exercise-modal-title">
+    <div class="fixed inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs" onclick="closeExerciseModal()"></div>
+    <div class="flex min-h-full items-center justify-center p-3 sm:p-4">
+      <div class="relative w-full max-w-lg bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl p-5 sm:p-6 text-slate-900 dark:text-slate-100">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
+          <h3 id="exercise-modal-title" class="text-lg font-extrabold text-slate-900 dark:text-white">Add Exercise</h3>
+          <button
+            type="button"
+            onclick="closeExerciseModal()"
+            aria-label="Close modal"
+            class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <form id="exercise-form" onsubmit="handleExerciseFormSubmit(event)" class="mt-4 space-y-4">
+          <input type="hidden" id="exercise-id-input" value="" />
+
+          <!-- Day & Exercise Name -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label for="exercise-day-input" class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
+                Day
+              </label>
+              <select
+                id="exercise-day-input"
+                class="w-full rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="Monday">Monday</option>
+                <option value="Tuesday">Tuesday</option>
+                <option value="Wednesday">Wednesday</option>
+                <option value="Thursday">Thursday</option>
+                <option value="Friday">Friday</option>
+                <option value="Saturday">Saturday</option>
+                <option value="Sunday">Sunday</option>
+              </select>
+            </div>
+
+            <div class="sm:col-span-2">
+              <label for="exercise-name-input" class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
+                Exercise Name *
+              </label>
+              <input
+                type="text"
+                id="exercise-name-input"
+                required
+                placeholder="e.g., Bench Press"
+                class="w-full rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+          </div>
+
+          <!-- 3 Sub-Category Hierarchy Levels (Max 3) -->
+          <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 space-y-3">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+              Sub-Categories (Up to 3 Levels)
+            </div>
+
+            <div>
+              <label for="cat-level-1-input" class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                Level 1 Category
+              </label>
+              <input
+                type="text"
+                id="cat-level-1-input"
+                list="cat1-suggestions"
+                placeholder="e.g., Upper Body"
+                class="w-full rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <datalist id="cat1-suggestions"></datalist>
+            </div>
+
+            <div>
+              <label for="cat-level-2-input" class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                Level 2 Sub-Category (Optional)
+              </label>
+              <input
+                type="text"
+                id="cat-level-2-input"
+                list="cat2-suggestions"
+                placeholder="e.g., Chest"
+                class="w-full rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <datalist id="cat2-suggestions"></datalist>
+            </div>
+
+            <div>
+              <label for="cat-level-3-input" class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                Level 3 Sub-Category (Optional)
+              </label>
+              <input
+                type="text"
+                id="cat-level-3-input"
+                list="cat3-suggestions"
+                placeholder="e.g., Barbell"
+                class="w-full rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <datalist id="cat3-suggestions"></datalist>
+            </div>
+          </div>
+
+          <!-- Number of Sets & Optional Reference Link -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label for="exercise-sets-input" class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
+                Number of Sets *
+              </label>
+              <input
+                type="number"
+                id="exercise-sets-input"
+                min="1"
+                max="30"
+                required
+                value="3"
+                class="w-full rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            <div class="sm:col-span-2">
+              <label for="exercise-link-input" class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
+                Reference Link (Optional)
+              </label>
+              <input
+                type="text"
+                id="exercise-link-input"
+                placeholder="e.g., youtube.com/watch?v=... or https://example.com"
+                class="w-full rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+          </div>
+
+          <!-- Form Actions -->
+          <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-700">
+            <button
+              type="button"
+              onclick="closeExerciseModal()"
+              class="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              class="px-5 py-2 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition cursor-pointer shadow-xs"
+            >
+              Save Exercise
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // 1. CONSTANTS & STATE
+    // =========================================================================
+    const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const STORAGE_KEY = 'weekly_workout_tracker_data_v1';
+    const THEME_KEY = 'weekly_workout_tracker_theme';
+    const RING_CIRCUMFERENCE = 427.25; // 2 * PI * r (r=68)
+
+    let activeDay = 'Monday';
+    let exercises = [];
+    let isTimerExpanded = false;
+
+    // Rest timer state
+    let restDurationSec = 90;
+    let restRemainingSec = 90;
+    let restTimerInterval = null;
+    let isRestTimerRunning = false;
+
+    // =========================================================================
+    // 2. INITIALIZATION & DARK MODE SETUP
+    // =========================================================================
+    window.addEventListener('DOMContentLoaded', () => {
+      initDarkMode();
+      loadFromLocalStorage();
+
+      // Default active tab to current day of week if available
+      const todayName = DAYS[(new Date().getDay() + 6) % 7];
+      if (DAYS.includes(todayName)) {
+        activeDay = todayName;
+      }
+
+      renderDayTabs();
+      renderExercisesForActiveDay();
+      updateTimerDisplay();
+    });
+
+    function initDarkMode() {
+      const savedTheme = localStorage.getItem(THEME_KEY);
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      
+      if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+        document.documentElement.classList.add('dark');
+        updateThemeIcons(true);
+      } else {
+        document.documentElement.classList.remove('dark');
+        updateThemeIcons(false);
+      }
+    }
+
+    function toggleDarkMode() {
+      const isDark = document.documentElement.classList.toggle('dark');
+      localStorage.setItem(THEME_KEY, isDark ? 'dark' : 'light');
+      updateThemeIcons(isDark);
+    }
+
+    function updateThemeIcons(isDark) {
+      const sunIcon = document.getElementById('theme-icon-sun');
+      const moonIcon = document.getElementById('theme-icon-moon');
+      if (isDark) {
+        sunIcon.classList.remove('hidden');
+        moonIcon.classList.add('hidden');
+      } else {
+        sunIcon.classList.add('hidden');
+        moonIcon.classList.remove('hidden');
+      }
+    }
+
+    function generateId() {
+      return 'ex_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 7);
+    }
+
+    function saveToLocalStorage() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(exercises));
+      } catch (err) {
+        console.error('Error saving to localStorage:', err);
+      }
+    }
+
+    function loadFromLocalStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            exercises = parsed.map(normalizeExercise);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('Error loading from localStorage:', err);
+      }
+      exercises = [];
+    }
+
+    function normalizeExercise(item) {
+      const setsCount = Math.max(1, Math.min(30, parseInt(item.setsCount, 10) || (Array.isArray(item.setChecks) ? item.setChecks.length : 3) || 3));
+      const existingChecks = Array.isArray(item.setChecks) ? item.setChecks : [];
+      const setChecks = Array.from({ length: setsCount }, (_, idx) => Boolean(existingChecks[idx]));
+
+      return {
+        id: item.id || generateId(),
+        day: DAYS.includes(item.day) ? item.day : 'Monday',
+        name: String(item.name || '').trim(),
+        cat1: String(item.cat1 || '').trim(),
+        cat2: String(item.cat2 || '').trim(),
+        cat3: String(item.cat3 || '').trim(),
+        link: String(item.link || '').trim(),
+        setsCount,
+        setChecks
+      };
+    }
+
+    // =========================================================================
+    // 3. MONDAY - SUNDAY TABS & RENDERING
+    // =========================================================================
+    function renderDayTabs() {
+      const nav = document.getElementById('day-tabs');
+      nav.innerHTML = '';
+
+      DAYS.forEach((day) => {
+        const dayItems = exercises.filter((ex) => ex.day === day);
+        const totalSets = dayItems.reduce((acc, ex) => acc + ex.setChecks.length, 0);
+        const doneSets = dayItems.reduce((acc, ex) => acc + ex.setChecks.filter(Boolean).length, 0);
+        const isSelected = day === activeDay;
+        const pct = totalSets > 0 ? Math.round((doneSets / totalSets) * 100) : 0;
+        const is100Pct = totalSets > 0 && doneSets === totalSets;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.onclick = () => {
+          activeDay = day;
+          renderDayTabs();
+          renderExercisesForActiveDay();
+        };
+
+        btn.className = `group flex flex-col min-w-[76px] sm:min-w-[96px] p-2 sm:p-2.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 border ${
+          isSelected
+            ? 'bg-slate-900 dark:bg-emerald-600 text-white border-slate-900 dark:border-emerald-600 shadow-sm'
+            : is100Pct
+            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+        }`;
+
+        let tabBadge = '';
+        if (totalSets > 0) {
+          if (is100Pct) {
+            tabBadge = `<span class="px-1.5 py-0.5 rounded-md text-[10px] font-black ${
+              isSelected ? 'bg-emerald-500 text-white' : 'bg-emerald-600 dark:bg-emerald-500 text-white'
+            }">100%</span>`;
+          } else {
+            tabBadge = `<span class="px-1.5 py-0.5 rounded-md text-[10px] font-black ${
+              isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+            }">${doneSets}/${totalSets}</span>`;
+          }
+        }
+
+        btn.innerHTML = `
+          <div class="flex items-center justify-between gap-1 w-full">
+            <span class="sm:hidden font-extrabold">${escapeHtml(day.slice(0, 3))}</span>
+            <span class="hidden sm:inline font-extrabold">${escapeHtml(day)}</span>
+            ${tabBadge}
+          </div>
+          <div class="w-full bg-slate-200/80 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden mt-2">
+            <div
+              class="h-full rounded-full transition-all duration-300 ${
+                is100Pct
+                  ? 'bg-emerald-500'
+                  : isSelected
+                  ? 'bg-emerald-400'
+                  : 'bg-emerald-600 dark:bg-emerald-400'
+              }"
+              style="width: ${pct}%"
+            ></div>
+          </div>
+        `;
+
+        nav.appendChild(btn);
+      });
+    }
+
+    function renderExercisesForActiveDay() {
+      document.getElementById('selected-day-heading').textContent = activeDay;
+
+      const dayExercises = exercises.filter((ex) => ex.day === activeDay);
+      const totalSets = dayExercises.reduce((sum, ex) => sum + ex.setChecks.length, 0);
+      const completedSets = dayExercises.reduce((sum, ex) => sum + ex.setChecks.filter(Boolean).length, 0);
+      const pct = totalSets > 0 ? Math.round((completedSets / totalSets) * 100) : 0;
+      const is100Pct = totalSets > 0 && completedSets === totalSets;
+
+      document.getElementById('selected-day-summary').textContent =
+        `${dayExercises.length} ${dayExercises.length === 1 ? 'exercise' : 'exercises'} • ${completedSets} of ${totalSets} sets completed`;
+
+      document.getElementById('day-progress-text').textContent = `${completedSets} / ${totalSets} Sets Completed (${pct}%)`;
+
+      const progressFill = document.getElementById('day-progress-fill');
+      progressFill.style.width = `${pct}%`;
+
+      const badgePercent = document.getElementById('day-badge-percent');
+      badgePercent.textContent = `${pct}% Complete`;
+
+      const headerCard = document.getElementById('day-header-card');
+
+      if (is100Pct) {
+        badgePercent.className = 'px-3 py-0.5 rounded-full text-xs font-black bg-emerald-600 text-white shadow-xs animate-complete-badge';
+        progressFill.className = 'h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-500 ease-out shadow-xs';
+        headerCard.className = 'bg-emerald-50/40 dark:bg-emerald-950/20 rounded-2xl border border-emerald-300 dark:border-emerald-800 p-4 sm:p-6 shadow-xs transition-all';
+      } else {
+        badgePercent.className = 'px-2.5 py-0.5 rounded-full text-xs font-black bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all';
+        progressFill.className = 'h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-500 ease-out';
+        headerCard.className = 'bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 sm:p-6 shadow-xs transition-all';
+      }
+
+      const container = document.getElementById('exercises-container');
+      container.innerHTML = '';
+
+      if (dayExercises.length === 0) {
+        container.innerHTML = `
+          <div class="bg-white dark:bg-slate-800 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-8 text-center">
+            <p class="text-sm font-semibold text-slate-700 dark:text-slate-300">No exercises added for ${escapeHtml(activeDay)} yet.</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Click "Add Exercise" to create an exercise with up to 3 sub-category levels.</p>
+          </div>
+        `;
+        return;
+      }
+
+      // Build 3-level sub-category hierarchy: Level 1 -> Level 2 -> Level 3 -> Exercises
+      const hierarchy = {};
+      dayExercises.forEach((ex) => {
+        const l1 = ex.cat1 || 'Uncategorized';
+        const l2 = ex.cat2 || '';
+        const l3 = ex.cat3 || '';
+
+        if (!hierarchy[l1]) hierarchy[l1] = {};
+        if (!hierarchy[l1][l2]) hierarchy[l1][l2] = {};
+        if (!hierarchy[l1][l2][l3]) hierarchy[l1][l2][l3] = [];
+        hierarchy[l1][l2][l3].push(ex);
+      });
+
+      Object.entries(hierarchy).forEach(([l1Name, l2Group]) => {
+        const l1Card = document.createElement('div');
+        l1Card.className = 'bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs overflow-hidden';
+
+        const l1Header = document.createElement('div');
+        l1Header.className = 'px-4 py-2.5 bg-slate-100 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2';
+        l1Header.innerHTML = `
+          <h3 class="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-slate-800 dark:text-slate-200">${escapeHtml(l1Name)}</h3>
+          <button
+            type="button"
+            onclick="openAddExerciseModal('${escapeAttr(l1Name === 'Uncategorized' ? '' : l1Name)}', '', '')"
+            class="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+          >
+            + Add
+          </button>
+        `;
+        l1Card.appendChild(l1Header);
+
+        const l1Body = document.createElement('div');
+        l1Body.className = 'p-3 sm:p-4 space-y-3';
+
+        Object.entries(l2Group).forEach(([l2Name, l3Group]) => {
+          const l2Container = document.createElement('div');
+          if (l2Name) {
+            l2Container.className = 'pl-3 sm:pl-4 border-l-2 border-slate-300 dark:border-slate-600 space-y-2.5';
+            const l2Label = document.createElement('div');
+            l2Label.className = 'flex items-center justify-between gap-2';
+            l2Label.innerHTML = `
+              <span class="text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 px-2.5 py-0.5 rounded-md">${escapeHtml(l2Name)}</span>
+              <button
+                type="button"
+                onclick="openAddExerciseModal('${escapeAttr(l1Name === 'Uncategorized' ? '' : l1Name)}', '${escapeAttr(l2Name)}', '')"
+                class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-emerald-600 cursor-pointer"
+              >
+                + Add
+              </button>
+            `;
+            l2Container.appendChild(l2Label);
+          } else {
+            l2Container.className = 'space-y-2.5';
+          }
+
+          Object.entries(l3Group).forEach(([l3Name, exList]) => {
+            const l3Container = document.createElement('div');
+            if (l3Name) {
+              l3Container.className = 'pl-3 sm:pl-4 border-l-2 border-emerald-400 dark:border-emerald-500 space-y-2';
+              const l3Label = document.createElement('div');
+              l3Label.className = 'flex items-center justify-between gap-2';
+              l3Label.innerHTML = `
+                <span class="text-xs font-semibold text-emerald-800 dark:text-emerald-400">${escapeHtml(l3Name)}</span>
+                <button
+                  type="button"
+                  onclick="openAddExerciseModal('${escapeAttr(l1Name === 'Uncategorized' ? '' : l1Name)}', '${escapeAttr(l2Name)}', '${escapeAttr(l3Name)}')"
+                  class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-emerald-600 cursor-pointer"
+                >
+                  + Add
+                </button>
+              `;
+              l3Container.appendChild(l3Label);
+            } else {
+              l3Container.className = 'space-y-2';
+            }
+
+            exList.forEach((ex) => {
+              l3Container.appendChild(buildExerciseElement(ex));
+            });
+
+            l2Container.appendChild(l3Container);
+          });
+
+          l1Body.appendChild(l2Container);
+        });
+
+        l1Card.appendChild(l1Body);
+        container.appendChild(l1Card);
+      });
+    }
+
+    function buildExerciseElement(ex) {
+      const allSetsChecked = ex.setChecks.length > 0 && ex.setChecks.every(Boolean);
+      const checkedCount = ex.setChecks.filter(Boolean).length;
+
+      const card = document.createElement('div');
+      card.className = `rounded-xl border p-3.5 transition ${
+        allSetsChecked
+          ? 'bg-emerald-50/50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800'
+          : 'bg-slate-50/60 dark:bg-slate-750 border-slate-200 dark:border-slate-700'
+      }`;
+
+      // Header row: Exercise Checkmark + Name + Optional Link + Edit/Delete
+      const topRow = document.createElement('div');
+      topRow.className = 'flex items-start justify-between gap-2';
+
+      const leftSide = document.createElement('div');
+      leftSide.className = 'flex items-center gap-2.5 min-w-0';
+
+      const exerciseCheckbox = document.createElement('input');
+      exerciseCheckbox.type = 'checkbox';
+      exerciseCheckbox.checked = allSetsChecked;
+      exerciseCheckbox.ariaLabel = `Mark all sets for ${ex.name}`;
+      exerciseCheckbox.onchange = () => toggleExerciseCheckmark(ex.id);
+      exerciseCheckbox.className = 'w-5 h-5 rounded-md border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500 cursor-pointer shrink-0';
+
+      const nameAndLink = document.createElement('div');
+      nameAndLink.className = 'flex flex-wrap items-center gap-2 min-w-0';
+
+      const titleSpan = document.createElement('span');
+      titleSpan.className = `text-sm sm:text-base font-bold break-words ${
+        allSetsChecked ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-900 dark:text-white'
+      }`;
+      titleSpan.textContent = ex.name;
+      nameAndLink.appendChild(titleSpan);
+
+      if (ex.link) {
+        const safeUrl = sanitizeUrl(ex.link);
+        const anchor = document.createElement('a');
+        anchor.href = safeUrl;
+        anchor.target = '_blank';
+        anchor.rel = 'noopener noreferrer';
+        anchor.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 hover:bg-sky-100 dark:hover:bg-sky-900 transition shrink-0';
+        anchor.innerHTML = `
+          <span>Link</span>
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+          </svg>
+        `;
+        nameAndLink.appendChild(anchor);
+      }
+
+      leftSide.appendChild(exerciseCheckbox);
+      leftSide.appendChild(nameAndLink);
+
+      // Edit & Delete buttons
+      const actionBtns = document.createElement('div');
+      actionBtns.className = 'flex items-center gap-1 shrink-0';
+      actionBtns.innerHTML = `
+        <button
+          type="button"
+          onclick="openEditExerciseModal('${ex.id}')"
+          class="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 transition cursor-pointer"
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          onclick="deleteExercise('${ex.id}')"
+          class="px-2.5 py-1 rounded-lg text-xs font-semibold text-rose-700 dark:text-rose-400 bg-white dark:bg-slate-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 border border-slate-200 dark:border-slate-600 transition cursor-pointer"
+        >
+          Delete
+        </button>
+      `;
+
+      topRow.appendChild(leftSide);
+      topRow.appendChild(actionBtns);
+      card.appendChild(topRow);
+
+      // Sets row: Checkboxes for every set
+      const setsWrap = document.createElement('div');
+      setsWrap.className = 'mt-3 pt-2.5 border-t border-slate-200/80 dark:border-slate-700';
+
+      const setsHeader = document.createElement('div');
+      setsHeader.className = 'text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2';
+      setsHeader.textContent = `Sets (${checkedCount}/${ex.setChecks.length} completed)`;
+      setsWrap.appendChild(setsHeader);
+
+      const checkboxesRow = document.createElement('div');
+      checkboxesRow.className = 'flex flex-wrap gap-2';
+
+      ex.setChecks.forEach((isChecked, idx) => {
+        const label = document.createElement('label');
+        label.className = `inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer select-none ${
+          isChecked
+            ? 'bg-emerald-600 dark:bg-emerald-600 text-white border-emerald-600'
+            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:border-emerald-500'
+        }`;
+
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = isChecked;
+        cb.onchange = () => toggleSetCheckmark(ex.id, idx);
+        cb.className = 'w-4 h-4 rounded accent-emerald-600 cursor-pointer';
+
+        const span = document.createElement('span');
+        span.textContent = `Set ${idx + 1}`;
+
+        label.appendChild(cb);
+        label.appendChild(span);
+        checkboxesRow.appendChild(label);
+      });
+
+      setsWrap.appendChild(checkboxesRow);
+      card.appendChild(setsWrap);
+
+      return card;
+    }
+
+    // =========================================================================
+    // 4. FLOATING REST TIMER LOGIC & EXPAND/MINIMIZE
+    // =========================================================================
+    function toggleTimerVisibility() {
+      isTimerExpanded = !isTimerExpanded;
+      const card = document.getElementById('floating-timer-card');
+      const pill = document.getElementById('floating-timer-pill');
+
+      if (isTimerExpanded) {
+        card.classList.remove('hidden');
+        pill.classList.add('hidden');
+      } else {
+        card.classList.add('hidden');
+        pill.classList.remove('hidden');
+      }
+    }
+
+    function setRestDuration(seconds) {
+      const parsed = Math.max(5, Math.min(3600, parseInt(seconds, 10) || 60));
+      stopRestTimerInterval();
+      isRestTimerRunning = false;
+      restDurationSec = parsed;
+      restRemainingSec = parsed;
+      document.getElementById('custom-rest-input').value = parsed;
+      setTimerStateUI('Ready');
+      updateTimerDisplay();
+    }
+
+    function adjustRestRemaining(deltaSeconds) {
+      restRemainingSec = Math.max(0, Math.min(3600, restRemainingSec + deltaSeconds));
+      if (restRemainingSec > restDurationSec) {
+        restDurationSec = restRemainingSec;
+        document.getElementById('custom-rest-input').value = restDurationSec;
+      }
+      updateTimerDisplay();
+    }
+
+    function toggleRestTimer() {
+      if (isRestTimerRunning) {
+        stopRestTimerInterval();
+        isRestTimerRunning = false;
+        setTimerStateUI('Paused');
+        updateTimerDisplay();
+      } else {
+        if (restRemainingSec <= 0) {
+          restRemainingSec = restDurationSec;
+        }
+        isRestTimerRunning = true;
+        setTimerStateUI('Resting');
+        updateTimerDisplay();
+
+        restTimerInterval = setInterval(() => {
+          restRemainingSec -= 1;
+          if (restRemainingSec <= 0) {
+            restRemainingSec = 0;
+            stopRestTimerInterval();
+            isRestTimerRunning = false;
+            setTimerStateUI('Done');
+            playTimerBeep();
+            showStatusMessage('Rest timer finished!', 'success');
+          }
+          updateTimerDisplay();
+        }, 1000);
+      }
+    }
+
+    function resetRestTimer() {
+      stopRestTimerInterval();
+      isRestTimerRunning = false;
+      restRemainingSec = restDurationSec;
+      setTimerStateUI('Ready');
+      updateTimerDisplay();
+    }
+
+    function stopRestTimerInterval() {
+      if (restTimerInterval) {
+        clearInterval(restTimerInterval);
+        restTimerInterval = null;
+      }
+    }
+
+    function setTimerStateUI(state) {
+      const stateLabel = document.getElementById('timer-state-label');
+      const startPauseBtn = document.getElementById('timer-start-pause-btn');
+      const playIcon = document.getElementById('timer-btn-icon-play');
+      const pauseIcon = document.getElementById('timer-btn-icon-pause');
+      const btnText = document.getElementById('timer-btn-text');
+      const ringCircle = document.getElementById('timer-progress-ring');
+      const pillDot = document.getElementById('pill-state-dot');
+
+      stateLabel.textContent = state;
+
+      if (state === 'Resting') {
+        stateLabel.className = 'text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 animate-pulse';
+        startPauseBtn.className = 'flex-1 inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold bg-amber-500 hover:bg-amber-400 active:scale-95 text-white shadow-xs transition cursor-pointer';
+        playIcon.classList.add('hidden');
+        pauseIcon.classList.remove('hidden');
+        btnText.textContent = 'Pause';
+
+        ringCircle.setAttribute('class', 'stroke-emerald-500 transition-all duration-500 ease-linear animate-pulse-glow');
+        pillDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping';
+      } else if (state === 'Paused') {
+        stateLabel.className = 'text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300';
+        startPauseBtn.className = 'flex-1 inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white shadow-xs transition cursor-pointer';
+        playIcon.classList.remove('hidden');
+        pauseIcon.classList.add('hidden');
+        btnText.textContent = 'Resume';
+
+        ringCircle.setAttribute('class', 'stroke-amber-500 transition-all duration-500 ease-linear');
+        pillDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500';
+      } else if (state === 'Done') {
+        stateLabel.className = 'text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 animate-bounce';
+        startPauseBtn.className = 'flex-1 inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white shadow-xs transition cursor-pointer';
+        playIcon.classList.remove('hidden');
+        pauseIcon.classList.add('hidden');
+        btnText.textContent = 'Restart';
+
+        ringCircle.setAttribute('class', 'stroke-indigo-500 transition-all duration-500 ease-linear');
+        pillDot.className = 'w-2.5 h-2.5 rounded-full bg-indigo-500';
+      } else {
+        // Ready
+        stateLabel.className = 'text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300';
+        startPauseBtn.className = 'flex-1 inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white shadow-xs transition cursor-pointer';
+        playIcon.classList.remove('hidden');
+        pauseIcon.classList.add('hidden');
+        btnText.textContent = 'Start';
+
+        ringCircle.setAttribute('class', 'stroke-emerald-500 transition-all duration-500 ease-linear');
+        pillDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
+      }
+    }
+
+    function updateTimerDisplay() {
+      const mins = Math.floor(restRemainingSec / 60);
+      const secs = restRemainingSec % 60;
+      const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+      const targetMins = Math.floor(restDurationSec / 60);
+      const targetSecs = restDurationSec % 60;
+      const targetFormatted = `${String(targetMins).padStart(2, '0')}:${String(targetSecs).padStart(2, '0')}`;
+
+      document.getElementById('timer-display').textContent = formatted;
+      document.getElementById('pill-timer-display').textContent = formatted;
+      document.getElementById('timer-target-subtitle').textContent = `Target ${targetFormatted}`;
+
+      // SVG Progress Ring DashOffset
+      const progressRatio = restDurationSec > 0 ? restRemainingSec / restDurationSec : 0;
+      const offset = RING_CIRCUMFERENCE * (1 - progressRatio);
+      document.getElementById('timer-progress-ring').style.strokeDashoffset = offset;
+
+      // Pill Mini Ring
+      const pillOffset = 94.2 * (1 - progressRatio);
+      document.getElementById('pill-mini-ring').style.strokeDashoffset = pillOffset;
+
+      // Highlight active duration preset buttons
+      const presetBtns = document.querySelectorAll('.preset-btn');
+      presetBtns.forEach((btn) => {
+        const btnSecs = parseInt(btn.getAttribute('data-duration'), 10);
+        if (btnSecs === restDurationSec) {
+          btn.className = 'preset-btn py-1.5 rounded-xl text-xs font-extrabold bg-emerald-600 text-white shadow-xs transition cursor-pointer';
+        } else {
+          btn.className = 'preset-btn py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 transition cursor-pointer';
+        }
+      });
+    }
+
+    function playTimerBeep() {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+
+        const playTone = (freq, startTime, duration) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, ctx.currentTime + startTime);
+          gain.gain.setValueAtTime(0.25, ctx.currentTime + startTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startTime + duration);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(ctx.currentTime + startTime);
+          osc.stop(ctx.currentTime + startTime + duration);
+        };
+
+        playTone(660, 0, 0.25);
+        playTone(880, 0.25, 0.45);
+      } catch (err) {
+        // Ignore audio errors if blocked by browser policy
+      }
+    }
+
+    // =========================================================================
+    // 5. ADD, EDIT, DELETE & CHECKMARK ACTIONS
+    // =========================================================================
+    function populateCategorySuggestions() {
+      const c1 = new Set();
+      const c2 = new Set();
+      const c3 = new Set();
+
+      exercises.forEach((ex) => {
+        if (ex.cat1) c1.add(ex.cat1);
+        if (ex.cat2) c2.add(ex.cat2);
+        if (ex.cat3) c3.add(ex.cat3);
+      });
+
+      document.getElementById('cat1-suggestions').innerHTML =
+        [...c1].map((v) => `<option value="${escapeAttr(v)}"></option>`).join('');
+      document.getElementById('cat2-suggestions').innerHTML =
+        [...c2].map((v) => `<option value="${escapeAttr(v)}"></option>`).join('');
+      document.getElementById('cat3-suggestions').innerHTML =
+        [...c3].map((v) => `<option value="${escapeAttr(v)}"></option>`).join('');
+    }
+
+    function openAddExerciseModal(prefillCat1 = '', prefillCat2 = '', prefillCat3 = '') {
+      populateCategorySuggestions();
+      document.getElementById('exercise-modal-title').textContent = 'Add Exercise';
+      document.getElementById('exercise-id-input').value = '';
+      document.getElementById('exercise-day-input').value = activeDay;
+      document.getElementById('exercise-name-input').value = '';
+      document.getElementById('cat-level-1-input').value = prefillCat1;
+      document.getElementById('cat-level-2-input').value = prefillCat2;
+      document.getElementById('cat-level-3-input').value = prefillCat3;
+      document.getElementById('exercise-sets-input').value = '3';
+      document.getElementById('exercise-link-input').value = '';
+
+      document.getElementById('exercise-modal').classList.remove('hidden');
+      setTimeout(() => document.getElementById('exercise-name-input').focus(), 40);
+    }
+
+    function openEditExerciseModal(id) {
+      const ex = exercises.find((item) => item.id === id);
+      if (!ex) return;
+
+      populateCategorySuggestions();
+      document.getElementById('exercise-modal-title').textContent = 'Edit Exercise';
+      document.getElementById('exercise-id-input').value = ex.id;
+      document.getElementById('exercise-day-input').value = ex.day;
+      document.getElementById('exercise-name-input').value = ex.name;
+      document.getElementById('cat-level-1-input').value = ex.cat1 || '';
+      document.getElementById('cat-level-2-input').value = ex.cat2 || '';
+      document.getElementById('cat-level-3-input').value = ex.cat3 || '';
+      document.getElementById('exercise-sets-input').value = ex.setsCount;
+      document.getElementById('exercise-link-input').value = ex.link || '';
+
+      document.getElementById('exercise-modal').classList.remove('hidden');
+      setTimeout(() => document.getElementById('exercise-name-input').focus(), 40);
+    }
+
+    function closeExerciseModal() {
+      document.getElementById('exercise-modal').classList.add('hidden');
+    }
+
+    function handleExerciseFormSubmit(event) {
+      event.preventDefault();
+
+      const id = document.getElementById('exercise-id-input').value.trim();
+      const day = document.getElementById('exercise-day-input').value;
+      const name = document.getElementById('exercise-name-input').value.trim();
+      const cat1 = document.getElementById('cat-level-1-input').value.trim();
+      const cat2 = document.getElementById('cat-level-2-input').value.trim();
+      const cat3 = document.getElementById('cat-level-3-input').value.trim();
+      const setsCount = Math.max(1, Math.min(30, parseInt(document.getElementById('exercise-sets-input').value, 10) || 1));
+      const link = document.getElementById('exercise-link-input').value.trim();
+
+      if (!name) {
+        showStatusMessage('Please enter an exercise name.', 'error');
+        return;
+      }
+
+      if (id) {
+        const idx = exercises.findIndex((item) => item.id === id);
+        if (idx !== -1) {
+          const oldChecks = exercises[idx].setChecks || [];
+          const resizedChecks = Array.from({ length: setsCount }, (_, i) => Boolean(oldChecks[i]));
+          exercises[idx] = {
+            ...exercises[idx],
+            day,
+            name,
+            cat1,
+            cat2,
+            cat3,
+            setsCount,
+            setChecks: resizedChecks,
+            link
+          };
+          showStatusMessage('Exercise updated.', 'success');
+        }
+      } else {
+        exercises.push({
+          id: generateId(),
+          day,
+          name,
+          cat1,
+          cat2,
+          cat3,
+          setsCount,
+          setChecks: Array.from({ length: setsCount }, () => false),
+          link
+        });
+        showStatusMessage('Exercise added.', 'success');
+      }
+
+      activeDay = day;
+      saveToLocalStorage();
+      closeExerciseModal();
+      renderDayTabs();
+      renderExercisesForActiveDay();
+    }
+
+    function deleteExercise(id) {
+      exercises = exercises.filter((item) => item.id !== id);
+      saveToLocalStorage();
+      renderDayTabs();
+      renderExercisesForActiveDay();
+      showStatusMessage('Exercise deleted.', 'info');
+    }
+
+    function toggleSetCheckmark(exerciseId, setIndex) {
+      const ex = exercises.find((item) => item.id === exerciseId);
+      if (!ex || !Array.isArray(ex.setChecks) || setIndex < 0 || setIndex >= ex.setChecks.length) return;
+
+      ex.setChecks[setIndex] = !ex.setChecks[setIndex];
+      saveToLocalStorage();
+      renderDayTabs();
+      renderExercisesForActiveDay();
+    }
+
+    function toggleExerciseCheckmark(exerciseId) {
+      const ex = exercises.find((item) => item.id === exerciseId);
+      if (!ex) return;
+
+      const allChecked = ex.setChecks.length > 0 && ex.setChecks.every(Boolean);
+      const nextState = !allChecked;
+      ex.setChecks = ex.setChecks.map(() => nextState);
+
+      saveToLocalStorage();
+      renderDayTabs();
+      renderExercisesForActiveDay();
+    }
+
+    // =========================================================================
+    // 6. EXCEL (.XLSX) SAVE & LOAD (SHEETJS)
+    // =========================================================================
+    function saveToExcel() {
+      try {
+        if (typeof XLSX === 'undefined') {
+          showStatusMessage('Excel library (SheetJS) failed to load.', 'error');
+          return;
+        }
+
+        const rows = exercises.map((ex) => {
+          const allDone = ex.setChecks.length > 0 && ex.setChecks.every(Boolean);
+          return {
+            Day: ex.day,
+            'Level 1 Category': ex.cat1 || '',
+            'Level 2 Sub-Category': ex.cat2 || '',
+            'Level 3 Sub-Category': ex.cat3 || '',
+            'Exercise Name': ex.name,
+            Sets: ex.setChecks.length,
+            'Set Checkmarks (1=Done, 0=Unchecked)': ex.setChecks.map((c) => (c ? 1 : 0)).join(','),
+            'Exercise Completed': allDone ? 1 : 0,
+            'Reference Link': ex.link || ''
+          };
+        });
+
+        const worksheet = XLSX.utils.json_to_sheet(rows);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Workout');
+
+        XLSX.writeFile(workbook, 'weekly-workout-tracker.xlsx');
+        showStatusMessage('Saved workout data to Excel (.xlsx).', 'success');
+      } catch (err) {
+        console.error('Error exporting to Excel:', err);
+        showStatusMessage('Failed to save Excel file.', 'error');
+      }
+    }
+
+    function loadFromExcel(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+
+      if (typeof XLSX === 'undefined') {
+        showStatusMessage('Excel library (SheetJS) failed to load.', 'error');
+        event.target.value = '';
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+
+          const imported = [];
+
+          rows.forEach((row) => {
+            const name = String(row['Exercise Name'] || row['Exercise'] || row['Name'] || '').trim();
+            if (!name) return;
+
+            const rawDay = String(row['Day'] || 'Monday').trim();
+            const day = DAYS.find((d) => d.toLowerCase() === rawDay.toLowerCase()) || 'Monday';
+
+            const cat1 = String(row['Level 1 Category'] || row['Category 1'] || row['Category'] || '').trim();
+            const cat2 = String(row['Level 2 Sub-Category'] || row['Category 2'] || row['Sub-Category'] || '').trim();
+            const cat3 = String(row['Level 3 Sub-Category'] || row['Category 3'] || '').trim();
+            const link = String(row['Reference Link'] || row['Link'] || row['URL'] || '').trim();
+
+            const rawChecks = String(row['Set Checkmarks (1=Done, 0=Unchecked)'] || row['Set Checkmarks'] || '').trim();
+            const checkTokens = rawChecks ? rawChecks.split(',').map((t) => t.trim()) : [];
+
+            const parsedSetsCount = parseInt(row['Sets'], 10);
+            const setsCount = Math.max(
+              1,
+              Math.min(30, parsedSetsCount || checkTokens.length || 3)
+            );
+
+            const exCompletedFlag = String(row['Exercise Completed'] || '').trim();
+            const allMarkedDone = exCompletedFlag === '1' || exCompletedFlag.toLowerCase() === 'true' || exCompletedFlag.toLowerCase() === 'yes';
+
+            const setChecks = Array.from({ length: setsCount }, (_, idx) => {
+              if (checkTokens[idx] !== undefined) {
+                return checkTokens[idx] === '1' || checkTokens[idx].toLowerCase() === 'true';
+              }
+              return allMarkedDone;
+            });
+
+            imported.push({
+              id: generateId(),
+              day,
+              name,
+              cat1,
+              cat2,
+              cat3,
+              link,
+              setsCount,
+              setChecks
+            });
+          });
+
+          exercises = imported;
+          saveToLocalStorage();
+          renderDayTabs();
+          renderExercisesForActiveDay();
+          showStatusMessage(`Loaded ${exercises.length} exercises from Excel.`, 'success');
+        } catch (err) {
+          console.error('Error reading Excel file:', err);
+          showStatusMessage('Could not load Excel file. Please check the file format.', 'error');
+        } finally {
+          event.target.value = '';
+        }
+      };
+
+      reader.readAsArrayBuffer(file);
+    }
+
+    // =========================================================================
+    // 7. HELPERS (STATUS BANNER, ESCAPING & URL SANITIZATION)
+    // =========================================================================
+    let statusTimeout = null;
+    function showStatusMessage(text, type = 'info') {
+      const banner = document.getElementById('status-banner');
+      banner.textContent = text;
+      banner.className = 'fixed top-4 right-4 z-50 max-w-sm px-4 py-3 rounded-xl text-sm font-semibold shadow-lg border transition-all duration-300';
+
+      if (type === 'success') {
+        banner.classList.add('bg-emerald-600', 'text-white', 'border-emerald-700');
+      } else if (type === 'error') {
+        banner.classList.add('bg-rose-600', 'text-white', 'border-rose-700');
+      } else {
+        banner.classList.add('bg-slate-900', 'text-white', 'border-slate-800');
+      }
+
+      banner.classList.remove('hidden');
+
+      if (statusTimeout) clearTimeout(statusTimeout);
+      statusTimeout = setTimeout(() => {
+        banner.classList.add('hidden');
+      }, 3000);
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function escapeAttr(str) {
+      return String(str)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '&quot;');
+    }
+
+    function sanitizeUrl(url) {
+      const trimmed = String(url).trim();
+      if (!trimmed) return '#';
+      // Prevent malicious script schemes
+      if (/^(javascript|data|vbscript):/i.test(trimmed)) {
+        return '#';
+      }
+      if (!/^https?:\/\//i.test(trimmed)) {
+        return 'https://' + trimmed;
+      }
+      return trimmed;
+    }
+  </script>
+</body>
+</html>
